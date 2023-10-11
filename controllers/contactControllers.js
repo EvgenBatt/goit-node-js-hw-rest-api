@@ -3,7 +3,10 @@ const { HttpError, controllerWrapper } = require("../utils");
 
 // Reads a list of contacts from the database and sends them as a JSON response
 const listContacts = async (req, res) => {
-  const contacts = await Contact.find();
+  const { _id: owner } = req.user;
+  const { page = 1, limit = 10 } = req.query;
+  const skip = (page - 1) * limit;
+  const contacts = await Contact.find(owner).skip(skip).limit(limit).populate("owner", "name email");
   res.status(200).json(contacts);
 };
 
@@ -20,7 +23,8 @@ const getContactById = async (req, res) => {
 
 // Adds a new contact to the database based on the data provided in the request body
 const addContact = async (req, res) => {
-  const contact = await Contact.create(req.body);
+  const { _id: owner } = req.user;
+  const contact = await Contact.create({ ...req.body, owner });
   res.status(201).json(contact);
 };
 
@@ -55,11 +59,11 @@ const updateContact = async (req, res) => {
  */
 const updateFavoriteContact = async (req, res) => {
   const { contactId } = req.params;
-  
+
   if (req.body.favorite === undefined) {
     return res.status(400).json({ message: "missing field favorite" });
   }
-  
+
   const editFavorite = await Contact.findByIdAndUpdate(contactId, req.body, {
     new: true,
   });
