@@ -1,10 +1,16 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const gravatar = require("gravatar");
+const path = require("path");
+const Jimp = require("jimp");
+const fs = require("fs/promises");
 
 const User = require("../models/users");
 const { HttpError, controllerWrapper } = require("../utils");
 
 const { SECRET_KEY } = process.env;
+
+const avatarDir = path.join(__dirname, "../", "public", "avatars");
 
 /**
  * The function registers a new user by checking if the email is already in use, hashing the password,
@@ -16,12 +22,13 @@ const register = async (req, res) => {
   const user = await User.findOne({ email });
 
   if (user) {
-    throw HttpError(409, "Email in use");
+    throw new HttpError(409, "Email in use");
   }
 
   const hashPassword = await bcrypt.hash(password, 10);
+  const avatarURL = gravatar.url(email);
 
-  const newUser = await User.create({ ...req.body, password: hashPassword });
+  const newUser = await User.create({ ...req.body, password: hashPassword, avatarURL });
 
   res.status(201).json({
     user: {
@@ -41,13 +48,13 @@ const login = async (req, res) => {
   const user = await User.findOne({ email });
 
   if (!user) {
-    throw HttpError(401, "Email or password is wrong");
+    throw new HttpError(401, "Email or password is wrong");
   }
 
   const passwordCompare = await bcrypt.compare(password, user.password);
 
   if (!passwordCompare) {
-    throw HttpError(401, "Email or password is wrong");
+    throw new HttpError(401, "Email or password is wrong");
   }
 
   const payload = {
@@ -80,9 +87,32 @@ const logout = async (req, res) => {
   res.status(204).json({ message: "No Content" });
 };
 
+/**
+ * The function updates the avatar of a user by renaming and moving the uploaded file, updating the
+ * avatar URL in the user's document, and returning the new avatar URL.
+ */
+const updateAvatar = async (req, res) => {
+  const { _id } = req.user;
+  const { path: tempUpload, originalname } = req.file;
+  const filename = `${_id}_${originalname}`;
+
+  const resultUpload = path.join(avatarDir, filename);
+
+  const image = await Jimp.read(tempUpload);
+  await image.resize(250, 250).write(tempUpload);
+
+  await fs.rename(tempUpload, resultUpload);
+
+  const avatarURL = path.join("avatars", filename);
+  await User.findByIdAndUpdate(_id, { avatarURL });
+
+  res.status(200).json({ avatarURL });
+};
+
 module.exports = {
   register: controllerWrapper(register),
   login: controllerWrapper(login),
   getCurrent: controllerWrapper(getCurrent),
   logout: controllerWrapper(logout),
+  updateAvatar: controllerWrapper(updateAvatar),
 };
